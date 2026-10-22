@@ -1,0 +1,103 @@
+name: "Google Chat CI Alert"
+description: "Sends Google Chat Card v2 alerts on workflow success, failure, or cancellation"
+author: "ONDC"
+
+inputs:
+  gchat_webhook:
+    description: "Google Chat space incoming webhook URL"
+    required: true
+  job_status:
+    description: "Status of the job (use ${{ job.status }})"
+    required: true
+  custom_message:
+    description: "Optional custom message to append to the notification"
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Send Google Chat Notification
+      shell: bash
+      run: |
+        STATUS="${{ inputs.job_status }}"
+        CUSTOM_MSG="${{ inputs.custom_message }}"
+
+        if [ "$STATUS" = "success" ]; then
+          HEADER_TITLE="✅ CI Workflow Passed"
+        elif [ "$STATUS" = "failure" ]; then
+          HEADER_TITLE="❌ CI Workflow Failed"
+        else
+          HEADER_TITLE="⚠️ CI Workflow Cancelled"
+        fi
+
+        RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+        PAYLOAD=$(cat <<JSON_EOF
+        {
+          "cardsV2": [
+            {
+              "cardId": "ci-alert-${{ github.run_id }}",
+              "card": {
+                "header": {
+                  "title": "${HEADER_TITLE}",
+                  "subtitle": "Repository: ${{ github.repository }}"
+                },
+                "sections": [
+                  {
+                    "widgets": [
+                      {
+                        "decoratedText": {
+                          "topLabel": "Workflow",
+                          "text": "${{ github.workflow }} (#${{ github.run_number }})"
+                        }
+                      },
+                      {
+                        "decoratedText": {
+                          "topLabel": "Branch / Event",
+                          "text": "${{ github.ref_name }} (${{ github.event_name }})"
+                        }
+                      },
+                      {
+                        "decoratedText": {
+                          "topLabel": "Triggered by",
+                          "text": "${{ github.actor }}"
+                        }
+                      },
+                      {
+                        "decoratedText": {
+                          "topLabel": "Commit",
+                          "text": "${{ github.sha }}"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "widgets": [
+                      {
+                        "buttonList": {
+                          "buttons": [
+                            {
+                              "text": "View Action Run",
+                              "onClick": {
+                                "openLink": {
+                                  "url": "${RUN_URL}"
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+JSON_EOF
+        )
+
+        curl -s -X POST -H "Content-Type: application/json; charset=UTF-8" \
+          -d "$PAYLOAD" \
+          "${{ inputs.gchat_webhook }}"
