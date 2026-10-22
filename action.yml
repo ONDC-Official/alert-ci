@@ -4,8 +4,21 @@ author: "ONDC"
 
 inputs:
   gchat_webhook:
-    description: "Google Chat space incoming webhook URL"
-    required: true
+    description: "Direct Google Chat webhook URL (optional if using group webhooks)"
+    required: false
+    default: ""
+  webhook_core:
+    description: "Core Space Webhook URL"
+    required: false
+    default: ""
+  webhook_logistics:
+    description: "Logistics Space Webhook URL"
+    required: false
+    default: ""
+  service_group:
+    description: "Optional explicit service group: core | logistics"
+    required: false
+    default: ""
   job_status:
     description: "Status of the job (e.g. success, failure, cancelled)"
     required: true
@@ -17,6 +30,9 @@ runs:
       shell: bash
       env:
         GCHAT_WEBHOOK_URL: ${{ inputs.gchat_webhook }}
+        WEBHOOK_CORE: ${{ inputs.webhook_core }}
+        WEBHOOK_LOGISTICS: ${{ inputs.webhook_logistics }}
+        SERVICE_GROUP: ${{ inputs.service_group }}
         JOB_STATUS: ${{ inputs.job_status }}
         COMMIT_SHA: ${{ github.sha }}
         REF_NAME: ${{ github.ref_name }}
@@ -29,9 +45,27 @@ runs:
         python3 -c '
         import os, sys, json, urllib.request, subprocess
 
-        webhook_url = os.environ.get("GCHAT_WEBHOOK_URL", "").strip()
+        direct_webhook = os.environ.get("GCHAT_WEBHOOK_URL", "").strip()
+        webhook_core = os.environ.get("WEBHOOK_CORE", "").strip()
+        webhook_logistics = os.environ.get("WEBHOOK_LOGISTICS", "").strip()
+        group = os.environ.get("SERVICE_GROUP", "").strip().lower()
+        repo = os.environ.get("REPO", "")
+        repo_lower = repo.lower()
+
+        # Resolve webhook URL:
+        if direct_webhook:
+            webhook_url = direct_webhook
+        elif group == "logistics":
+            webhook_url = webhook_logistics or webhook_core
+        elif group == "core":
+            webhook_url = webhook_core or webhook_logistics
+        elif any(k in repo_lower for k in ["log", "trv", "travel", "mobility"]):
+            webhook_url = webhook_logistics or webhook_core
+        else:
+            webhook_url = webhook_core or webhook_logistics
+
         if not webhook_url:
-            print("GCHAT_WEBHOOK_URL is not set. Skipping notification.")
+            print("No valid GChat webhook found. Skipping notification.")
             sys.exit(0)
 
         status = os.environ.get("JOB_STATUS", "unknown").lower()
