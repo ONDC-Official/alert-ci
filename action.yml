@@ -7,7 +7,7 @@ inputs:
     description: "Google Chat space incoming webhook URL"
     required: true
   job_status:
-    description: "Status of the job (use ${{ job.status }})"
+    description: "Status of the job (pass job.status from caller workflow)"
     required: true
   custom_message:
     description: "Optional custom message to append to the notification"
@@ -19,29 +19,39 @@ runs:
   steps:
     - name: Send Google Chat Notification
       shell: bash
+      env:
+        WEBHOOK_URL: ${{ inputs.gchat_webhook }}
+        JOB_STATUS: ${{ inputs.job_status }}
+        CUSTOM_MSG: ${{ inputs.custom_message }}
+        REPO: ${{ github.repository }}
+        WORKFLOW: ${{ github.workflow }}
+        RUN_NUMBER: ${{ github.run_number }}
+        REF_NAME: ${{ github.ref_name }}
+        EVENT_NAME: ${{ github.event_name }}
+        ACTOR: ${{ github.actor }}
+        SHA: ${{ github.sha }}
+        SERVER_URL: ${{ github.server_url }}
+        RUN_ID: ${{ github.run_id }}
       run: |
-        STATUS="${{ inputs.job_status }}"
-        CUSTOM_MSG="${{ inputs.custom_message }}"
-
-        if [ "$STATUS" = "success" ]; then
+        if [ "$JOB_STATUS" = "success" ]; then
           HEADER_TITLE="✅ CI Workflow Passed"
-        elif [ "$STATUS" = "failure" ]; then
+        elif [ "$JOB_STATUS" = "failure" ]; then
           HEADER_TITLE="❌ CI Workflow Failed"
         else
           HEADER_TITLE="⚠️ CI Workflow Cancelled"
         fi
 
-        RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        RUN_URL="${SERVER_URL}/${REPO}/actions/runs/${RUN_ID}"
 
-        PAYLOAD=$(cat <<JSON_EOF
+        PAYLOAD=$(cat <<'EOF'
         {
           "cardsV2": [
             {
-              "cardId": "ci-alert-${{ github.run_id }}",
+              "cardId": "ci-alert-RUN_ID_PLACEHOLDER",
               "card": {
                 "header": {
-                  "title": "${HEADER_TITLE}",
-                  "subtitle": "Repository: ${{ github.repository }}"
+                  "title": "HEADER_TITLE_PLACEHOLDER",
+                  "subtitle": "Repository: REPO_PLACEHOLDER"
                 },
                 "sections": [
                   {
@@ -49,25 +59,25 @@ runs:
                       {
                         "decoratedText": {
                           "topLabel": "Workflow",
-                          "text": "${{ github.workflow }} (#${{ github.run_number }})"
+                          "text": "WORKFLOW_PLACEHOLDER (#RUN_NUMBER_PLACEHOLDER)"
                         }
                       },
                       {
                         "decoratedText": {
                           "topLabel": "Branch / Event",
-                          "text": "${{ github.ref_name }} (${{ github.event_name }})"
+                          "text": "REF_NAME_PLACEHOLDER (EVENT_NAME_PLACEHOLDER)"
                         }
                       },
                       {
                         "decoratedText": {
                           "topLabel": "Triggered by",
-                          "text": "${{ github.actor }}"
+                          "text": "ACTOR_PLACEHOLDER"
                         }
                       },
                       {
                         "decoratedText": {
                           "topLabel": "Commit",
-                          "text": "${{ github.sha }}"
+                          "text": "SHA_PLACEHOLDER"
                         }
                       }
                     ]
@@ -81,7 +91,7 @@ runs:
                               "text": "View Action Run",
                               "onClick": {
                                 "openLink": {
-                                  "url": "${RUN_URL}"
+                                  "url": "RUN_URL_PLACEHOLDER"
                                 }
                               }
                             }
@@ -95,9 +105,21 @@ runs:
             }
           ]
         }
-JSON_EOF
+        EOF
         )
 
-        curl -s -X POST -H "Content-Type: application/json; charset=UTF-8" \
+        PAYLOAD="${PAYLOAD//RUN_ID_PLACEHOLDER/$RUN_ID}"
+        PAYLOAD="${PAYLOAD//HEADER_TITLE_PLACEHOLDER/$HEADER_TITLE}"
+        PAYLOAD="${PAYLOAD//REPO_PLACEHOLDER/$REPO}"
+        PAYLOAD="${PAYLOAD//WORKFLOW_PLACEHOLDER/$WORKFLOW}"
+        PAYLOAD="${PAYLOAD//RUN_NUMBER_PLACEHOLDER/$RUN_NUMBER}"
+        PAYLOAD="${PAYLOAD//REF_NAME_PLACEHOLDER/$REF_NAME}"
+        PAYLOAD="${PAYLOAD//EVENT_NAME_PLACEHOLDER/$EVENT_NAME}"
+        PAYLOAD="${PAYLOAD//ACTOR_PLACEHOLDER/$ACTOR}"
+        PAYLOAD="${PAYLOAD//SHA_PLACEHOLDER/$SHA}"
+        PAYLOAD="${PAYLOAD//RUN_URL_PLACEHOLDER/$RUN_URL}"
+
+        curl -s -X POST -H 'Content-Type: application/json; charset=UTF-8' \
           -d "$PAYLOAD" \
-          "${{ inputs.gchat_webhook }}"
+          "$WEBHOOK_URL"
+
